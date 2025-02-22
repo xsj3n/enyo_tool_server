@@ -43,10 +43,12 @@ ActionChains(driver)\
 driver.switch_to.default_content()
 # end close iframe logic 
 
-
-input_element.click()
-input_element.send_keys(query)
-input_element.send_keys(Keys.RETURN)
+ActionChains(driver)\
+    .move_to_element(input_element)\
+    .click()\
+    .pause(1)\
+    .send_keys(query)\
+    .send_keys(Keys.RETURN)
 
 stop_element = wait.until(
     EC.presence_of_all_elements_located((By.XPATH, '//div[contains(text(), "Related")]'))
