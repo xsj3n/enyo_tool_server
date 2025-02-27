@@ -26,7 +26,7 @@ startToolServer :: IO ()
 startToolServer = scotty 8181 $ do
   get  "/list" $ S.json =<< liftIO listModules
   post "/call" $ jsonData >>= \(res :: PythonCall) -> liftIO (execModule res) >>= S.json
-  get  "/stop/:modelname" $ pathParam "modelname" >>= liftIO . stopLLMModel
+  get  "/stop/:modelname" $ captureParam "modelname" >>= liftIO . stopLLMModel
 
 mkModuleDirIfNotThere :: IO ()
 mkModuleDirIfNotThere = SysDir.createDirectoryIfMissing True "./modules"
