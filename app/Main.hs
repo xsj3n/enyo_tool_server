@@ -15,7 +15,7 @@ import Control.Monad (void)
 import GHC.IO.Handle
 import GHC.Generics
 import qualified System.Directory as SysDir
-import qualified System.Process as SysProc
+import System.Process
 
 main :: IO ()
 main =
@@ -35,16 +35,16 @@ listModules :: IO ModList
 listModules = ModList . map (`PythonMod` "") <$> SysDir.listDirectory "./modules"
 
 stopLLMModel :: String -> IO ()
-stopLLMModel model_name = void $ SysProc.createProcess $ SysProc.shell model_name
+stopLLMModel model_name = void $ createProcess $ shell model_name
         
                               
 execModule :: PythonCall -> IO PythonResults
-execModule parameters = SysProc.createProcess ((SysProc.shell $ mkShellString parameters){ SysProc.std_out = SysProc.CreatePipe }) >>=
+execModule parameters = createProcess ((mkProcessInfo $ mkShellString parameters){ std_out = CreatePipe }) >>=
            (\case
               (_, Just hOut, _, pHandle) -> hGetContents hOut >>= (\content -> 
                                       if null content 
-                                        then PythonResults "<null>" . exitCodeToInt <$> SysProc.waitForProcess pHandle
-                                        else PythonResults content .  exitCodeToInt <$> SysProc.waitForProcess pHandle)
+                                        then PythonResults "<null>" . exitCodeToInt <$> waitForProcess pHandle
+                                        else PythonResults content .  exitCodeToInt <$> waitForProcess pHandle)
               _ -> return $ PythonResults "Process creation failure" (-1))
 
 
@@ -52,18 +52,37 @@ exitCodeToInt :: ExitCode -> Int
 exitCodeToInt ExitSuccess = 0
 exitCodeToInt (ExitFailure i) = i 
 
-mkShellString  :: PythonCall -> String
-mkShellString pycall = let 
-                        module_str = "python modules/" ++ modName pycall ++ ".py" 
+mkShellString  :: PythonCall -> [String]
+mkShellString pycall = let
+                        moduleStrList = ["python" , "modules/" ++ modName pycall ++ ".py"] 
                        in 
-                        foldMap (++ " ") $  module_str : getParams pycall 
+                        moduleStrList ++ getParams pycall
                   
 getParams :: PythonCall -> [String]
 getParams pycall = filter strIsNotEmpty [p0 pycall, p1 pycall, p2 pycall, p3 pycall, p4 pycall]
 
+
+mkProcessInfo :: [String] -> CreateProcess
+mkProcessInfo (x:xs) = CreateProcess {
+                    cmdspec = RawCommand x xs,
+                    cwd = Nothing,
+                    env = Nothing,
+                    std_in = Inherit,
+                    std_out = Inherit,
+                    std_err = Inherit,
+                    close_fds = False,
+                    create_group = False,
+                    delegate_ctlc = False,
+                    detach_console = False,
+                    create_new_console = False,
+                    new_session = False,
+                    child_group = Nothing,
+                    child_user = Nothing,
+                    use_process_jobs = False }
+
 strIsNotEmpty :: String -> Bool
 strIsNotEmpty str 
-  | not (null str)= True
+  | not (null str) = True
   | otherwise = False 
          
 data PythonResults = PythonResults { pyOutput :: String, exitcode :: Int } deriving (Generic, Show)
