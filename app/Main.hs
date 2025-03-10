@@ -5,29 +5,63 @@
 {-# LANGUAGE LambdaCase #-}
 
 module Main where
-
-import Web.Scotty as S
 import Data.Aeson
 import qualified  Data.Text as Txt 
 import System.Exit
 import Control.Monad.IO.Class (liftIO)
+import Control.Exception
 import Control.Monad (void)
 import GHC.IO.Handle
 import GHC.Generics
+import Network.Socket
+import qualified Network.Socket.ByteString as NBS
+import System.IO
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import qualified System.Directory as SysDir
 import System.Process
 
 main :: IO ()
-main =
-  mkModuleDirIfNotThere >>
-  startToolServer
+main = do
+  mkModuleDirIfNotThere
+  sock <- socket AF_INET Stream 0
+  setSocketOption sock KeepAlive 1
+  bind sock $ SockAddrInet 8181 0
+  listen sock 2
+  putStrLn "[*] Tool server started on port 8181"
+  mainLoop sock
+  
 
-startToolServer :: IO ()
-startToolServer = scotty 8181 $ do
-  get  "/list" $ S.json =<< liftIO listModules
-  post "/call" $ jsonData >>= \(res :: PythonCall) -> liftIO (execModule res) >>= S.json
-  get  "/stop/:modelname" $ captureParam "modelname" >>= liftIO . stopLLMModel
+mainLoop :: Socket -> IO ()
+mainLoop sock = do
+  (connSock, _) <- accept sock
+  putStrLn "[*] Started session with RPC client"
+  commLoop connSock
+  mainLoop sock
 
+
+commLoop :: Socket -> IO ()
+commLoop sock = do
+  bs <- NBS.recv sock $ 4096 * 4
+  case (decode $ BL.fromStrict bs) :: Maybe PythonCall of
+    Nothing -> rpcSendError sock -- return malformed request error
+    Just p -> do
+                execModule p >>= rpcSend sock
+                putStrLn $ "[*] Executed " ++ modName p ++ " module"
+  
+  commLoop sock
+  
+    
+
+
+rpcSendError :: Socket -> IO ()
+rpcSendError sock = NBS.sendAll sock $ BS.toStrict $ encode $ PythonResults "malformed text" 1
+
+
+rpcSend :: Socket -> PythonResults -> IO ()
+rpcSend sock pyresults = NBS.sendAll sock $ BS.toStrict $ encode pyresults
+
+                 
 mkModuleDirIfNotThere :: IO ()
 mkModuleDirIfNotThere = SysDir.createDirectoryIfMissing True "./modules"
 
